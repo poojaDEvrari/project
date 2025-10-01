@@ -5,6 +5,7 @@ import '../../widgets/permission_banner.dart';
 import '../../services/permission_service.dart';
 import '../../core/theme/app_colors.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:go_router/go_router.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -14,17 +15,32 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
-  // Force-show the permission banner for visual verification. Set to false when done.
-  bool showPermissionDialog = true;
+class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
+  // Banner only shows when camera permission is NOT granted
+  bool showPermissionDialog = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkPermissions();
   }
 
-  Future<void> _checkPermissions() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Returning from Settings. Re-check and auto-advance if granted
+      _checkPermissions(autoNavigate: true);
+    }
+  }
+
+  Future<void> _checkPermissions({bool autoNavigate = false}) async {
     final status = await Permission.camera.status;
     if (!status.isGranted) {
       // Show dialog after a brief delay to ensure it appears on top
@@ -35,6 +51,14 @@ class _ScanScreenState extends State<ScanScreen> {
           });
         }
       });
+    } else {
+      if (mounted) setState(() => showPermissionDialog = false);
+    }
+    if (autoNavigate && status.isGranted) {
+      if (mounted) {
+        setState(() => showPermissionDialog = false);
+        context.push('/scan/running');
+      }
     }
   }
 
@@ -44,6 +68,7 @@ class _ScanScreenState extends State<ScanScreen> {
       setState(() {
         showPermissionDialog = false;
       });
+      if (mounted) context.push('/scan/running');
     }
   }
 
