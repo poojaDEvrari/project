@@ -29,7 +29,9 @@ final GoRouter appRouter = GoRouter(
       name: 'scan',
       builder: (BuildContext context, GoRouterState state) {
         final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
-        return ScanScreen(totalRooms: total);
+        final room = state.uri.queryParameters['room'];
+        final index = int.tryParse(state.uri.queryParameters['index'] ?? '');
+        return ScanScreen(totalRooms: total, initialRoomName: room, initialIndex: index);
       },
     ),
     GoRoute(
@@ -37,7 +39,9 @@ final GoRouter appRouter = GoRouter(
       name: 'scan_tips',
       builder: (BuildContext context, GoRouterState state) {
         final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
-        return ScanTipsScreen(totalRooms: total);
+        final room = state.uri.queryParameters['room'] ?? 'Living Room';
+        final index = int.tryParse(state.uri.queryParameters['index'] ?? '') ?? 1;
+        return ScanTipsScreen(totalRooms: total, roomName: room, index: index);
       },
     ),
     GoRoute(
@@ -69,7 +73,17 @@ final GoRouter appRouter = GoRouter(
             : (q == 'fair')
                 ? ScanQuality.fair
                 : ScanQuality.excellent;
-        return ScanReviewScreen(quality: quality);
+        final idx = int.tryParse(state.uri.queryParameters['index'] ?? '') ?? 1;
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 1;
+        final room = state.uri.queryParameters['room'] ?? 'Living Room';
+        final imagePath = state.extra is Map ? (state.extra as Map)['imagePath'] as String? : null;
+        return ScanReviewScreen(
+          quality: quality,
+          currentIndex: idx,
+          totalRooms: total,
+          roomName: room,
+          imagePath: imagePath,
+        );
       },
     ),
     GoRoute(

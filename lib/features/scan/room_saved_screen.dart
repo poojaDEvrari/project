@@ -128,7 +128,7 @@ class RoomSavedScreen extends StatelessWidget {
                     child: const Text('Finish & review all spaces', style: TextStyle(fontWeight: FontWeight.w600)),
                   )
                 : ElevatedButton.icon(
-                    onPressed: () => context.go('/scan/running?room=${Uri.encodeComponent(nextRoom)}&index=$nextIndex&total=$totalRooms'),
+                    onPressed: () => context.go('/rooms/select'),
                     icon: const Icon(Icons.qr_code_scanner_outlined),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.navy,
@@ -136,7 +136,7 @@ class RoomSavedScreen extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
-                    label: const Text('Scan Next Room', style: TextStyle(fontWeight: FontWeight.w600)),
+                    label: const Text('Begin Next Room', style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
           ),
         ),

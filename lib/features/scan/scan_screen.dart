@@ -8,7 +8,9 @@ import 'package:go_router/go_router.dart';
 
 class ScanScreen extends StatefulWidget {
   final int totalRooms;
-  const ScanScreen({super.key, required this.totalRooms});
+  final String? initialRoomName;
+  final int? initialIndex;
+  const ScanScreen({super.key, required this.totalRooms, this.initialRoomName, this.initialIndex});
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -55,7 +57,9 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     if (autoNavigate && status.isGranted) {
       if (mounted) {
         setState(() => showPermissionDialog = false);
-        context.push('/scan/tips?total=${widget.totalRooms}');
+        final room = widget.initialRoomName ?? 'Living Room';
+        final idx = widget.initialIndex ?? 1;
+        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx');
       }
     }
   }
@@ -66,7 +70,11 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       setState(() {
         showPermissionDialog = false;
       });
-      if (mounted) context.push('/scan/tips?total=${widget.totalRooms}');
+      if (mounted) {
+        final room = widget.initialRoomName ?? 'Living Room';
+        final idx = widget.initialIndex ?? 1;
+        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx');
+      }
     }
   }
 

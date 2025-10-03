@@ -6,7 +6,9 @@ import '../../widgets/primary_button.dart';
 
 class ScanTipsScreen extends StatelessWidget {
   final int totalRooms;
-  const ScanTipsScreen({super.key, required this.totalRooms});
+  final String roomName;
+  final int index;
+  const ScanTipsScreen({super.key, required this.totalRooms, required this.roomName, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +18,7 @@ class ScanTipsScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
-        title: 'Living Room'.text.make(),
+        title: roomName.text.make(),
         centerTitle: true,
         actions: [
           Container(
@@ -26,9 +28,9 @@ class ScanTipsScreen extends StatelessWidget {
               color: Colors.black.withOpacity(0.06),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Text(
-              'Room 1 of 5',
-              style: TextStyle(fontWeight: FontWeight.w600),
+            child: Text(
+              'Room $index of $totalRooms',
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -73,7 +75,7 @@ class ScanTipsScreen extends StatelessWidget {
               icon: Icons.qr_code_scanner_outlined,
               bgColor: AppColors.navy,
               fgColor: Colors.white,
-              onPressed: () => context.push('/scan/running?room=Room%201&index=1&total=$totalRooms'),
+              onPressed: () => context.push('/scan/running?room=${Uri.encodeComponent(roomName)}&index=$index&total=$totalRooms'),
             ),
           ),
         ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:velocity_x/velocity_x.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/state/scan_session.dart';
 
 class ScannedRoomsScreen extends StatelessWidget {
   final int totalRooms;
@@ -10,8 +11,12 @@ class ScannedRoomsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final roomList = totalRooms > 0 ? List.generate(totalRooms, (i) => 'Room ${i + 1}') : ['Room 1'];
-    final scannedRooms = roomList.take((totalRooms > 3 ? 3 : totalRooms)).toList(); // Take up to 3 or totalRooms
+    final session = ScanSession.instance;
+    final hasSession = session.hasStarted;
+    final total = hasSession ? session.total : totalRooms;
+    final scannedRooms = hasSession && session.scannedRooms.isNotEmpty
+        ? session.scannedRooms
+        : (total > 0 ? List.generate(total.clamp(0, 3), (i) => 'Room ${i + 1}') : <String>['Room 1']);
 
     return Scaffold(
       appBar: AppBar(
@@ -25,7 +30,8 @@ class ScannedRoomsScreen extends StatelessWidget {
             ...(() {
               final withSeparators = <Widget>[];
               for (var i = 0; i < scannedRooms.length; i++) {
-                withSeparators.add(_ScannedRoomCard(title: scannedRooms[i], status: 'Fully Scanned'));
+                final title = scannedRooms[i];
+                withSeparators.add(_ScannedRoomCard(title: title, status: 'Fully Scanned'));
                 if (i < scannedRooms.length - 1) {
                   withSeparators.add(const SizedBox(height: 12));
                 }
@@ -34,7 +40,7 @@ class ScannedRoomsScreen extends StatelessWidget {
             })(),
             const SizedBox(height: 16),
             _AddRoomCard(
-              onTap: () => context.go('/scan/running?room=Room%201&index=1&total=$totalRooms'),
+              onTap: () => context.go('/rooms/select'),
             ),
             const SizedBox(height: 16),
             SizedBox(

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:velocity_x/velocity_x.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
+import '../../core/state/scan_session.dart';
 
 enum ScanQuality { excellent, fair, poor }
 
@@ -21,7 +22,19 @@ ScanQuality _parseQuality(String? q) {
 
 class ScanReviewScreen extends StatelessWidget {
   final ScanQuality quality;
-  const ScanReviewScreen({super.key, required this.quality});
+  final int currentIndex;
+  final int totalRooms;
+  final String roomName;
+  final String? imagePath;
+
+  const ScanReviewScreen({
+    super.key,
+    required this.quality,
+    this.currentIndex = 1,
+    this.totalRooms = 1,
+    this.roomName = 'Living Room',
+    this.imagePath,
+  });
 
   Color _qualityColor(ScanQuality q) {
     switch (q) {
@@ -112,7 +125,7 @@ class ScanReviewScreen extends StatelessWidget {
                               label: 'Rescan',
                               bgColor: Colors.white,
                               fgColor: AppColors.navy,
-                              onPressed: () => context.go('/scan/running'),
+                              onPressed: () => context.go('/scan/running?room=${Uri.encodeComponent(roomName)}&index=$currentIndex&total=$totalRooms'),
                             ),
                           ),
                         ),
@@ -126,7 +139,19 @@ class ScanReviewScreen extends StatelessWidget {
                                 label: 'Save',
                                 bgColor: AppColors.navy,
                                 fgColor: Colors.white,
-                                onPressed: () => context.go('/home'),
+                                onPressed: () {
+                                  // Mark the current room as scanned in session (if started)
+                                  final session = ScanSession.instance;
+                                  if (session.hasStarted) {
+                                    session.markScanned(roomName);
+                                  }
+                                  final idx = session.hasStarted ? session.scannedCount : currentIndex;
+                                  final total = session.hasStarted ? session.total : totalRooms;
+                                  context.go(
+                                    '/scan/saved?index=$idx&total=$total&room=${Uri.encodeComponent(roomName)}',
+                                    extra: imagePath == null ? null : {'imagePath': imagePath},
+                                  );
+                                },
                               ),
                             ),
                           ),

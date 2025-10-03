@@ -70,7 +70,7 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
     if (!mounted) return;
     final isLast = widget.currentRoomIndex >= widget.totalRooms;
     context.go(
-      '/scan/saved?index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
+      '/scan/review?quality=excellent&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
       // No image yet in this auto-complete path; the Done button path handles capture
     );
   }
@@ -389,7 +389,7 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                                   child: OutlinedButton(
                                     onPressed: () {
                                       Navigator.of(ctx).pop();
-                                      context.push('/scan/review?quality=fair');
+                                      context.go('/scan/review?quality=fair&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}');
                                     },
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.black,
@@ -414,22 +414,25 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                   child: PrimaryButton(
                     label: 'Done',
                     onPressed: () async {
-                      const index = 2; // TODO: wire with real progress
-                      const total = 5; // TODO: wire with real progress
-                      const roomName = 'Living Room';
+                      final index = widget.currentRoomIndex;
+                      final total = widget.totalRooms;
+                      final roomName = widget.roomName;
                       if (_controller?.value.isInitialized ?? false) {
                         try {
                           final file = await _controller!.takePicture();
                           if (!mounted) return;
-                          context.go('/scan/saved?index=$index&total=$total&room=$roomName', extra: {
-                            'imagePath': file.path,
-                          });
+                          context.go(
+                            '/scan/review?quality=excellent&index=$index&total=$total&room=$roomName',
+                            extra: {
+                              'imagePath': file.path,
+                            },
+                          );
                           return;
                         } catch (_) {
                           if (!mounted) return;
                         }
                       }
-                      context.go('/scan/saved?index=$index&total=$total&room=$roomName');
+                      context.go('/scan/review?quality=excellent&index=$index&total=$total&room=$roomName');
                     },
                     bgColor: AppColors.navy,
                     fgColor: Colors.white,
