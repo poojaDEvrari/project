@@ -2,16 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:velocity_x/velocity_x.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/permission_banner.dart';
-import '../../services/permission_service.dart';
 import '../../core/theme/app_colors.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:go_router/go_router.dart';
 
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key});
+  final int totalRooms;
+  const ScanScreen({super.key, required this.totalRooms});
 
- 
-    @override
+  @override
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
@@ -51,13 +50,12 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
           });
         }
       });
-    } else {
       if (mounted) setState(() => showPermissionDialog = false);
     }
     if (autoNavigate && status.isGranted) {
       if (mounted) {
         setState(() => showPermissionDialog = false);
-        context.push('/scan/running');
+        context.push('/scan/tips?total=${widget.totalRooms}');
       }
     }
   }
@@ -68,7 +66,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       setState(() {
         showPermissionDialog = false;
       });
-      if (mounted) context.push('/scan/running');
+      if (mounted) context.push('/scan/tips?total=${widget.totalRooms}');
     }
   }
 

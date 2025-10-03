@@ -5,7 +5,8 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
 
 class ScanTipsScreen extends StatelessWidget {
-  const ScanTipsScreen({super.key});
+  final int totalRooms;
+  const ScanTipsScreen({super.key, required this.totalRooms});
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +73,7 @@ class ScanTipsScreen extends StatelessWidget {
               icon: Icons.qr_code_scanner_outlined,
               bgColor: AppColors.navy,
               fgColor: Colors.white,
-              onPressed: () => context.push('/scan/running'),
+              onPressed: () => context.push('/scan/running?room=Room%201&index=1&total=$totalRooms'),
             ),
           ),
         ),

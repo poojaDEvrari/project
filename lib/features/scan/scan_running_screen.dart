@@ -5,20 +5,19 @@ import 'package:camera/camera.dart';
 import 'dart:async';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
-import 'models/scanned_room.dart';
 
 class ScanRunningScreen extends StatefulWidget {
   final String roomName;
   final String roomType;
   final int currentRoomIndex;
   final int totalRooms;
-  
+
   const ScanRunningScreen({
     super.key,
-    required this.roomName,
-    required this.roomType,
+    this.roomName = 'Living Room',
+    this.roomType = 'bedroom',
     this.currentRoomIndex = 1,
-    this.totalRooms = 1,
+    required this.totalRooms,
   });
 
   @override
@@ -68,24 +67,30 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
   }
   
   void _onScanComplete() {
-    // Create a scanned room with the results
-    final scannedRoom = ScannedRoom(
-      name: widget.roomName,
-      type: widget.roomType,
-      scanQuality: 0.9, // Example quality
-      pointCount: 1500, // Example point count
+    if (!mounted) return;
+    final isLast = widget.currentRoomIndex >= widget.totalRooms;
+    context.go(
+      '/scan/saved?index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
+      // No image yet in this auto-complete path; the Done button path handles capture
     );
-    
-    // Navigate to completion screen
-    if (mounted) {
-      context.pushReplacement(
-        '/scan/complete',
-        extra: {
-          'scannedRoom': scannedRoom,
-          'isLastRoom': widget.currentRoomIndex >= widget.totalRooms,
-        },
-      );
-    }
+  }
+
+  Future<void> _restartScan() async {
+    // Stop any ongoing scan progress
+    _scanTimer?.cancel();
+    setState(() {
+      _isScanning = false;
+      _scanProgress = 0.0;
+    });
+
+    // Recreate the camera controller cleanly
+    final old = _controller;
+    _controller = null;
+    await old?.dispose();
+    await _initCamera();
+
+    // Start scanning again
+    _startScanning();
   }
 
   Future<void> _initCamera() async {
@@ -358,6 +363,23 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                                       elevation: 0,
                                     ),
                                     child: const Text('Continue Scanning', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  height: 52,
+                                  width: double.infinity,
+                                  child: OutlinedButton(
+                                    onPressed: () async {
+                                      Navigator.of(ctx).pop();
+                                      await _restartScan();
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.navy,
+                                      side: BorderSide(color: AppColors.navy.withOpacity(0.3)),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    child: const Text('Restart Scan', style: TextStyle(fontWeight: FontWeight.w600)),
                                   ),
                                 ),
                                 const SizedBox(height: 12),

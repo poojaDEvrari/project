@@ -9,6 +9,7 @@ import '../../features/scan/scan_processing_screen.dart';
 import '../../features/scan/scan_review_screen.dart';
 import '../../features/scan/room_saved_screen.dart';
 import '../../features/rooms/room_selection_screen.dart';
+import '../../features/rooms/scanned_rooms_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -26,17 +27,32 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/scan',
       name: 'scan',
-      builder: (BuildContext context, GoRouterState state) => const ScanScreen(),
+      builder: (BuildContext context, GoRouterState state) {
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
+        return ScanScreen(totalRooms: total);
+      },
     ),
     GoRoute(
       path: '/scan/tips',
       name: 'scan_tips',
-      builder: (BuildContext context, GoRouterState state) => const ScanTipsScreen(),
+      builder: (BuildContext context, GoRouterState state) {
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
+        return ScanTipsScreen(totalRooms: total);
+      },
     ),
     GoRoute(
       path: '/scan/running',
       name: 'scan_running',
-      builder: (BuildContext context, GoRouterState state) => const ScanRunningScreen(),
+      builder: (BuildContext context, GoRouterState state) {
+        final room = state.uri.queryParameters['room'] ?? 'Living Room';
+        final index = int.tryParse(state.uri.queryParameters['index'] ?? '') ?? 1;
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
+        return ScanRunningScreen(
+          roomName: room,
+          currentRoomIndex: index,
+          totalRooms: total,
+        );
+      },
     ),
     GoRoute(
       path: '/scan/processing',
@@ -71,6 +87,14 @@ final GoRouter appRouter = GoRouter(
       path: '/rooms/select',
       name: 'room_selection',
       builder: (BuildContext context, GoRouterState state) => const RoomSelectionScreen(),
+    ),
+    GoRoute(
+      path: '/rooms/scanned',
+      name: 'scanned_rooms',
+      builder: (BuildContext context, GoRouterState state) {
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
+        return ScannedRoomsScreen(totalRooms: total);
+      },
     ),
   ],
 );
