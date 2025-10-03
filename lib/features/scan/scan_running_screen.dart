@@ -2,11 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:velocity_x/velocity_x.dart';
 import 'package:camera/camera.dart';
+import 'dart:async';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
+import 'models/scanned_room.dart';
 
 class ScanRunningScreen extends StatefulWidget {
-  const ScanRunningScreen({super.key});
+  final String roomName;
+  final String roomType;
+  final int currentRoomIndex;
+  final int totalRooms;
+  
+  const ScanRunningScreen({
+    super.key,
+    required this.roomName,
+    required this.roomType,
+    this.currentRoomIndex = 1,
+    this.totalRooms = 1,
+  });
 
   @override
   State<ScanRunningScreen> createState() => _ScanRunningScreenState();
@@ -15,11 +28,64 @@ class ScanRunningScreen extends StatefulWidget {
 class _ScanRunningScreenState extends State<ScanRunningScreen> {
   CameraController? _controller;
   bool _initFailed = false;
+  bool _isScanning = false;
+  double _scanProgress = 0.0;
+  Timer? _scanTimer;
 
   @override
   void initState() {
     super.initState();
     _initCamera();
+    _startScanning();
+  }
+  
+  @override
+  void dispose() {
+    _scanTimer?.cancel();
+    _controller?.dispose();
+    super.dispose();
+  }
+  
+  void _startScanning() {
+    setState(() {
+      _isScanning = true;
+      _scanProgress = 0.0;
+    });
+    
+    // Simulate scanning progress
+    _scanTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) return;
+      
+      setState(() {
+        _scanProgress += 0.01;
+        if (_scanProgress >= 1.0) {
+          _scanProgress = 1.0;
+          _onScanComplete();
+          timer.cancel();
+        }
+      });
+    });
+  }
+  
+  void _onScanComplete() {
+    // Create a scanned room with the results
+    final scannedRoom = ScannedRoom(
+      name: widget.roomName,
+      type: widget.roomType,
+      scanQuality: 0.9, // Example quality
+      pointCount: 1500, // Example point count
+    );
+    
+    // Navigate to completion screen
+    if (mounted) {
+      context.pushReplacement(
+        '/scan/complete',
+        extra: {
+          'scannedRoom': scannedRoom,
+          'isLastRoom': widget.currentRoomIndex >= widget.totalRooms,
+        },
+      );
+    }
   }
 
   Future<void> _initCamera() async {
@@ -39,73 +105,53 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
   }
 
   @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final isReady = _controller?.value.isInitialized ?? false;
     final previewSize = isReady ? _controller!.value.previewSize : null;
+    final mediaQuery = MediaQuery.of(context);
+    final statusBarHeight = mediaQuery.padding.top;
+    final appBarHeight = kToolbarHeight;
+    final totalTopPadding = statusBarHeight + appBarHeight;
+    
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.black,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => _showCancelDialog(context),
         ),
-        title: 'Living Room'.text.make(),
+        title: Text(
+          widget.roomName,
+          style: const TextStyle(color: Colors.white, fontSize: 18),
+        ),
         centerTitle: true,
         actions: [
           Container(
-            margin: const EdgeInsets.only(right: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.black.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white24),
             ),
-            child: const Text(
-              'Room 1 of 5',
-              style: TextStyle(fontWeight: FontWeight.w600),
+            child: Text(
+              'Room ${widget.currentRoomIndex} of ${widget.totalRooms}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
       ),
       body: Stack(
         children: [
-          // Camera live preview - hard-cover using ClipRect + OverflowBox + FittedBox
+          // Camera preview taking full screen
           Positioned.fill(
+            top: 0,
             child: isReady
-                ? LayoutBuilder(
-                    builder: (context, constraints) {
-                      final fallback = Size(constraints.maxWidth, constraints.maxHeight);
-                      final previewSize = _controller!.value.previewSize ?? fallback;
-                      final aspect = _controller!.value.aspectRatio; // width / height
-                      return ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.center,
-                          minWidth: 0,
-                          minHeight: 0,
-                          maxWidth: double.infinity,
-                          maxHeight: double.infinity,
-                          child: FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: previewSize.width,
-                              height: previewSize.height,
-                              child: AspectRatio(
-                                aspectRatio: aspect,
-                                child: CameraPreview(_controller!),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  )
+                ? CameraPreview(_controller!)
                 : Container(
                     color: Colors.black,
                     alignment: Alignment.center,
@@ -114,38 +160,137 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                         : const CircularProgressIndicator(color: Colors.white),
                   ),
           ),
+          
+          // Scanning progress indicator
+          if (_isScanning)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(
+                value: _scanProgress,
+                backgroundColor: Colors.black26,
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                minHeight: 4,
+              ),
+            ),
+            
+          // Scanning instructions overlay
+          Positioned(
+            bottom: 100,
+            left: 0,
+            right: 0,
+            child: Column(
+              children: [
+                const Text(
+                  'Slowly move your device around the room',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(1, 1),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${(_scanProgress * 100).toInt()}% complete',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(1, 1),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Semi-transparent overlay for the top part to ensure header is readable
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: totalTopPadding + 10, // Add a little extra for the shadow
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.4),
+                    Colors.transparent,
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
+              ),
+            ),
+          ),
 
           // Tip banner over image
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF2F80ED)),
-                    ),
-                    child: const Icon(Icons.bolt_outlined, size: 16, color: Color(0xFF2F80ED)),
+          Positioned(
+            top: totalTopPadding + 16, // Position below app bar with some padding
+            left: 16,
+            right: 16,
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF2F80ED)),
                   ),
-                  12.widthBox,
-                  'Move Slowly Around The Room.'
-                      .text
-                      .color(AppColors.navy)
-                      .semiBold
-                      .make(),
-                ],
-              )
-                  .p16()
-                  .box
-                  .color(const Color(0xFFEAF2FF))
-                  .border(color: const Color(0xFFBFD7FF))
-                  .roundedLg
-                  .shadowSm
-                  .make(),
+                  child: const Icon(Icons.bolt_outlined, size: 16, color: Color(0xFF2F80ED)),
+                ),
+                12.widthBox,
+                'Move Slowly Around The Room.'
+                    .text
+                    .color(AppColors.navy)
+                    .semiBold
+                    .make(),
+              ],
+            )
+                .p16()
+                .box
+                .color(const Color(0xFFEAF2FF))
+                .border(color: const Color(0xFFBFD7FF))
+                .roundedLg
+                .shadowSm
+                .make(),
+          ),
+          
+          // Bottom controls
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.8),
+                  ],
+                ),
+              ),
+              child: _isScanning
+                  ? _buildScanningControls()
+                  : _buildInitialControls(),
             ),
           ),
         ],
@@ -247,18 +392,22 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                   child: PrimaryButton(
                     label: 'Done',
                     onPressed: () async {
+                      const index = 2; // TODO: wire with real progress
+                      const total = 5; // TODO: wire with real progress
+                      const roomName = 'Living Room';
                       if (_controller?.value.isInitialized ?? false) {
                         try {
                           final file = await _controller!.takePicture();
                           if (!mounted) return;
-                          context.push('/scan/review?quality=excellent', extra: {'imagePath': file.path});
+                          context.go('/scan/saved?index=$index&total=$total&room=$roomName', extra: {
+                            'imagePath': file.path,
+                          });
+                          return;
                         } catch (_) {
                           if (!mounted) return;
-                          context.push('/scan/review?quality=excellent');
                         }
-                      } else {
-                        context.push('/scan/review?quality=excellent');
                       }
+                      context.go('/scan/saved?index=$index&total=$total&room=$roomName');
                     },
                     bgColor: AppColors.navy,
                     fgColor: Colors.white,
@@ -270,5 +419,124 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildInitialControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildControlButton(
+          icon: Icons.flash_on,
+          onPressed: () {},
+        ),
+        _buildScanButton(
+          onPressed: _startScanning,
+          isScanning: false,
+        ),
+        _buildControlButton(
+          icon: Icons.flip_camera_ios,
+          onPressed: () {},
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildScanningControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildControlButton(
+          icon: Icons.pause,
+          onPressed: () {
+            // Pause scanning
+            _scanTimer?.cancel();
+            setState(() => _isScanning = false);
+          },
+        ),
+        const SizedBox(width: 24),
+        _buildControlButton(
+          icon: Icons.check,
+          backgroundColor: Colors.green,
+          onPressed: () {
+            // Complete scanning early
+            _scanTimer?.cancel();
+            _onScanComplete();
+          },
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildControlButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    Color? backgroundColor,
+  }) {
+    return IconButton(
+      icon: Icon(icon, color: Colors.white),
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: backgroundColor ?? Colors.black54,
+        padding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScanButton({VoidCallback? onPressed, bool isScanning = false}) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 70,
+        height: 70,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isScanning ? Colors.red : Colors.transparent,
+          border: Border.all(
+            color: isScanning ? Colors.red : Colors.white,
+            width: 3,
+          ),
+        ),
+        child: Center(
+          child: isScanning
+              ? const Icon(
+                  Icons.stop,
+                  color: Colors.white,
+                  size: 32,
+                )
+              : const Icon(
+                  Icons.camera_alt,
+                  color: Colors.white,
+                  size: 32,
+                ),
+        ),
+      ),
+    );
+  }
+  
+  Future<void> _showCancelDialog(BuildContext context) async {
+    final shouldCancel = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Scanning'),
+        content: const Text('Are you sure you want to cancel scanning this room?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No, Continue'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Yes, Cancel', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    
+    if (shouldCancel == true && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 }

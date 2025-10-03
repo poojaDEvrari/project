@@ -7,6 +7,7 @@ import '../../features/scan/scan_tips_screen.dart';
 import '../../features/scan/scan_running_screen.dart';
 import '../../features/scan/scan_processing_screen.dart';
 import '../../features/scan/scan_review_screen.dart';
+import '../../features/scan/room_saved_screen.dart';
 import '../../features/rooms/room_selection_screen.dart';
 
 final GoRouter appRouter = GoRouter(
@@ -53,6 +54,17 @@ final GoRouter appRouter = GoRouter(
                 ? ScanQuality.fair
                 : ScanQuality.excellent;
         return ScanReviewScreen(quality: quality);
+      },
+    ),
+    GoRoute(
+      path: '/scan/saved',
+      name: 'room_saved',
+      builder: (BuildContext context, GoRouterState state) {
+        final idx = int.tryParse(state.uri.queryParameters['index'] ?? '') ?? 2;
+        final total = int.tryParse(state.uri.queryParameters['total'] ?? '') ?? 5;
+        final room = state.uri.queryParameters['room'] ?? 'Living Room';
+        final imagePath = state.extra is Map ? (state.extra as Map)['imagePath'] as String? : null;
+        return RoomSavedScreen(currentIndex: idx, totalRooms: total, roomName: room, imagePath: imagePath);
       },
     ),
     GoRoute(
