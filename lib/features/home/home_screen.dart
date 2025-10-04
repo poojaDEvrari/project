@@ -29,6 +29,12 @@ class HomeScreen extends StatelessWidget {
       ]).p16(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
+        onTap: (i) {
+          // Navigate to settings when settings tab tapped
+          if (i == 1) {
+            context.go('/settings');
+          }
+        },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Setting'),

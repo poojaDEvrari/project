@@ -49,7 +49,7 @@ class ScanTipsScreen extends StatelessWidget {
               ),
               child: const Icon(Icons.lightbulb_outline, size: 16, color: Color(0xFF2F80ED)),
             ),
-            14.widthBox,
+            18.widthBox,
             'Good lighting improves edge\ndetection.'
                 .text
                 .color(AppColors.navy)
@@ -58,6 +58,7 @@ class ScanTipsScreen extends StatelessWidget {
           ])
               .p16()
               .box
+              .width(MediaQuery.of(context).size.width * 0.9)
               .color(const Color(0xFFEAF2FF))
               .border(color: const Color(0xFFBFD7FF))
               .roundedSM

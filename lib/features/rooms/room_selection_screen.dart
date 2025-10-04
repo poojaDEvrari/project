@@ -43,12 +43,18 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            context.go('/rooms/scanned');
+          },
+        ),
         title: (hasSession ? 'Select Next Room' : 'Room Selection').text.make(),
       ),
       body: SafeArea(
-        child: VStack([
-          if (!hasSession) ...[
+        child: SingleChildScrollView(
+          child: VStack([
+            if (!hasSession) ...[
             'Which rooms are in scope?'.text.semiBold.size(18).make(),
             12.heightBox,
             ...rooms.entries.map((e) => _RoomTile(
@@ -68,7 +74,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
             16.heightBox,
             // Already scanned (disabled)
             if (session.scannedCount > 0) ...[
-              'Already scanned'.text.size(14).gray500.make(),
+              'Already scanned'.text.color(Colors.grey.shade500).make(),
               8.heightBox,
               ...session.scannedRooms.map((r) => _RoomTile(
                     label: r,
@@ -78,6 +84,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
             ],
           ],
         ]).p16(),
+        ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(

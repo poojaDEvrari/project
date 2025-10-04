@@ -5,18 +5,43 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/state/scan_session.dart';
 
-class ScannedRoomsScreen extends StatelessWidget {
+class ScannedRoomsScreen extends StatefulWidget {
   final int totalRooms;
   const ScannedRoomsScreen({super.key, this.totalRooms = 5});
 
   @override
+  State<ScannedRoomsScreen> createState() => _ScannedRoomsScreenState();
+}
+
+class _ScannedRoomsScreenState extends State<ScannedRoomsScreen> {
+  void _refreshRooms() {
+    setState(() {});
+  }
+
+  Future<void> _handleMenuAction(String action, String roomName) async {
+    switch (action) {
+      case 'rescan':
+        // Navigate to scan screen to rescan the room
+        final session = ScanSession.instance;
+        final roomIndex = session.selectedRooms.toList().indexOf(roomName) + 1;
+        final totalRooms = session.total;
+
+        context.push('/scan?total=$totalRooms&room=${Uri.encodeComponent(roomName)}&index=$roomIndex');
+        break;
+      case 'delete':
+        _showDeleteConfirmation(context, roomName);
+        break;
+    }
+  }
+  @override
   Widget build(BuildContext context) {
     final session = ScanSession.instance;
     final hasSession = session.hasStarted;
-    final total = hasSession ? session.total : totalRooms;
+    final total = hasSession ? session.total : widget.totalRooms;
     final scannedRooms = hasSession && session.scannedRooms.isNotEmpty
         ? session.scannedRooms
         : (total > 0 ? List.generate(total.clamp(0, 3), (i) => 'Room ${i + 1}') : <String>['Room 1']);
+    final bottomInset = MediaQuery.of(context).padding.bottom + 24.0; // nav bars + extra spacing
 
     return Scaffold(
       appBar: AppBar(
@@ -25,13 +50,17 @@ class ScannedRoomsScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, bottomInset),
           children: [
             ...(() {
               final withSeparators = <Widget>[];
               for (var i = 0; i < scannedRooms.length; i++) {
                 final title = scannedRooms[i];
-                withSeparators.add(_ScannedRoomCard(title: title, status: 'Fully Scanned'));
+                withSeparators.add(_ScannedRoomCard(
+                  title: title,
+                  status: 'Fully Scanned',
+                  onMenuAction: _handleMenuAction,
+                ));
                 if (i < scannedRooms.length - 1) {
                   withSeparators.add(const SizedBox(height: 12));
                 }
@@ -39,32 +68,57 @@ class ScannedRoomsScreen extends StatelessWidget {
               return withSeparators;
             })(),
             const SizedBox(height: 16),
-            _AddRoomCard(
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
               onTap: () => context.go('/rooms/select'),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 52,
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () {
-                  // Placeholder for View Room Details
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('View Room Details coming soon')),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.black,
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Container(
+                height: 100,
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.add_circle_outline, color: Colors.black87),
+                    const SizedBox(width: 8),
+                    'Add Room'.text.semiBold.make(),
+                  ],
                 ),
-                child: const Text('View Room Details', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
       bottomNavigationBar: _BottomNav(),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context, String roomName) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Room'),
+          content: Text('Are you sure you want to delete "$roomName"? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final success = ScanSession.instance.deleteRoom(roomName);
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(success ? '$roomName deleted successfully' : 'Failed to delete room')),
+                );
+                _refreshRooms();
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -72,7 +126,13 @@ class ScannedRoomsScreen extends StatelessWidget {
 class _ScannedRoomCard extends StatelessWidget {
   final String title;
   final String status;
-  const _ScannedRoomCard({required this.title, required this.status});
+  final Function(String, String) onMenuAction;
+
+  const _ScannedRoomCard({
+    required this.title,
+    required this.status,
+    required this.onMenuAction,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -101,44 +161,46 @@ class _ScannedRoomCard extends StatelessWidget {
             status.text.color(const Color(0xFF16A34A)).make(),
           ],
         ),
-        trailing: const Icon(Icons.more_horiz),
-        onTap: () {},
-      ),
-    );
-  }
-}
-
-class _AddRoomCard extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AddRoomCard({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return DottedBorder(
-      borderType: BorderType.RRect,
-      radius: const Radius.circular(12),
-      dashPattern: const [6, 6],
-      color: const Color(0xFFCBD5E1),
-      strokeWidth: 1.2,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          height: 100,
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.add_circle_outline, color: Colors.black87),
-              const SizedBox(width: 8),
-              'Add Room'.text.semiBold.make(),
+        trailing: Theme(
+          data: Theme.of(context).copyWith(
+            popupMenuTheme: const PopupMenuThemeData(
+              elevation: 8,
+            ),
+          ),
+          child: PopupMenuButton<String>(
+            onSelected: (value) => onMenuAction(value, title),
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'rescan',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh, size: 20),
+                    SizedBox(width: 8),
+                    Text('Rescan'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete Room', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
+        onTap: () {
+          context.push('/room-details?room=${Uri.encodeComponent(title)}');
+        },
       ),
     );
   }
 }
+
 
 class _BottomNav extends StatelessWidget {
   @override
@@ -148,10 +210,7 @@ class _BottomNav extends StatelessWidget {
       onTap: (i) {
         if (i == 0) return; // Home
         if (i == 1) {
-          // Settings (placeholder)
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Settings coming soon')),
-          );
+          context.go('/settings');
         }
       },
       items: const [
@@ -162,89 +221,3 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-// Simple dotted border painter to avoid extra package
-class DottedBorder extends StatelessWidget {
-  final Widget child;
-  final BorderType borderType;
-  final Radius radius;
-  final List<double> dashPattern;
-  final Color color;
-  final double strokeWidth;
-
-  const DottedBorder({
-    super.key,
-    required this.child,
-    this.borderType = BorderType.RRect,
-    this.radius = const Radius.circular(0),
-    this.dashPattern = const [4, 4],
-    this.color = Colors.black26,
-    this.strokeWidth = 1,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _DottedBorderPainter(
-        borderType: borderType,
-        radius: radius,
-        dashPattern: dashPattern,
-        color: color,
-        strokeWidth: strokeWidth,
-      ),
-      child: child,
-    );
-  }
-}
-
-enum BorderType { RRect }
-
-class _DottedBorderPainter extends CustomPainter {
-  final BorderType borderType;
-  final Radius radius;
-  final List<double> dashPattern;
-  final Color color;
-  final double strokeWidth;
-
-  _DottedBorderPainter({
-    required this.borderType,
-    required this.radius,
-    required this.dashPattern,
-    required this.color,
-    required this.strokeWidth,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(rect, radius);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-
-    _drawDashedRRect(canvas, rrect, paint, dashPattern);
-  }
-
-  void _drawDashedRRect(Canvas canvas, RRect rrect, Paint paint, List<double> dashArray) {
-    final path = Path()..addRRect(rrect);
-    final metrics = path.computeMetrics();
-    for (final metric in metrics) {
-      double distance = 0.0;
-      bool draw = true;
-      int index = 0;
-      while (distance < metric.length) {
-        final len = dashArray[index % dashArray.length];
-        if (draw) {
-          final extract = metric.extractPath(distance, (distance + len).clamp(0, metric.length));
-          canvas.drawPath(extract, paint);
-        }
-        distance += len;
-        draw = !draw;
-        index++;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
