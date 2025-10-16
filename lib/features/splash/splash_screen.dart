@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:velocity_x/velocity_x.dart';
 import '../../core/theme/app_colors.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/auth/auth_service.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 class SplashScreen extends StatefulWidget {
@@ -17,11 +18,18 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _checkAssets().then((_) {
+    _checkAssets().then((_) async {
       // Extended splash timing
-      Future.delayed(const Duration(seconds: 4), () {
-        if (mounted) context.go('/home');
-      });
+      await Future.delayed(const Duration(seconds: 4));
+      if (!mounted) return;
+      // Use AuthService to check authentication and navigate
+      final authService = AuthService();
+      final isAuth = await authService.isAuthenticated();
+      if (isAuth) {
+        context.go('/home'); // Go to Home if authenticated
+      } else {
+        context.go('/login'); // Go to Login if not
+      }
     });
   }
 

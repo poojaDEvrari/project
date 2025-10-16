@@ -12,6 +12,9 @@ import '../../features/rooms/scanned_rooms_screen.dart';
 import '../../features/rooms/add_item_screen.dart';
 import '../../features/rooms/room_details_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/auth/login_screen.dart';
+import '../../features/auth/signup_screen.dart';
+import '../../features/auth/profile_screen.dart';
 
 
 final GoRouter appRouter = GoRouter(
@@ -134,5 +137,20 @@ final GoRouter appRouter = GoRouter(
       name: 'settings',
       builder: (context, state) => const SettingsScreen(),
     ), 
+    GoRoute(
+      path: '/login',
+      name: 'login',
+      builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: '/signup',
+      name: 'signup',
+      builder: (context, state) => const SignupScreen(),
+    ),
+    GoRoute(
+      path: '/profile',
+      name: 'profile',
+      builder: (context, state) => const ProfileScreen(),
+    ),
   ],
 );

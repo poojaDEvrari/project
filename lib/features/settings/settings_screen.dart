@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:velocity_x/velocity_x.dart';
 import 'package:go_router/go_router.dart';
+import '../auth/auth_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -11,9 +12,9 @@ class SettingsScreen extends StatelessWidget {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          onPressed: () => context.go('/home'),
         ),
-  title: 'Settings'.text.make(),
+        title: 'Settings'.text.make(),
         centerTitle: true,
         elevation: 0,
       ),
@@ -28,46 +29,46 @@ class SettingsScreen extends StatelessWidget {
                 child: 'How to use'.text.xl2.semiBold.make(),
               ),
               const SizedBox(height: 12),
-                SizedBox(
-                  height: 170,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: 2,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 0),
-                        child: SizedBox(
-                          width: 160,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.asset(
-                                  'assets/images/image.png',
-                                  width: 160,
-                                  height: 110,
-                                  fit: BoxFit.cover,
-                                ),
+              SizedBox(
+                height: 170,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 2,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 0),
+                      child: SizedBox(
+                        width: 160,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.asset(
+                                'assets/images/image.png',
+                                width: 160,
+                                height: 110,
+                                fit: BoxFit.cover,
                               ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'How to scan a room',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                                softWrap: true,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'How to scan a room',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                              softWrap: true,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
+              ),
               // reduced gap between carousel and FAQ
               const SizedBox(height: 8),
               'Frequently Asked Questions'.text.xl2.semiBold.make(),
@@ -78,8 +79,7 @@ class SettingsScreen extends StatelessWidget {
               _faqItem('Why are my measurements inaccurate?', 'Check the object\'s size and ensure it\'s within the app\'s measurement range. Try different lighting.'),
               const SizedBox(height: 12),
               _faqItem('The app keeps crashing.', 'Restart the app and your device. If the issue persists, contact support for further assistance.'),
-              const SizedBox(height
-              : 48),
+              const SizedBox(height: 48),
             ],
           ),
         ),
@@ -89,16 +89,25 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: SizedBox(
             height: 56,
-            child: ElevatedButton(
-              onPressed: () {
-                // Placeholder: open email or support flow
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Support tapped')));
+            child: FutureBuilder<bool>(
+              future: AuthService().isAuthenticated(),
+              builder: (context, snapshot) {
+                final isAuth = snapshot.data == true;
+                return ElevatedButton(
+                  onPressed: () {
+                    if (isAuth) {
+                      context.go('/profile');
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact Support tapped')));
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF020817),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: (isAuth ? 'View Profile' : 'Contact Support').text.white.semiBold.size(18).make(),
+                );
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF020817),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: 'Contact Support'.text.white.semiBold.size(18).make(),
             ),
           ),
         ),

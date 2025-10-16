@@ -30,8 +30,9 @@ class HomeScreen extends StatelessWidget {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
         onTap: (i) {
-          // Navigate to settings when settings tab tapped
-          if (i == 1) {
+          if (i == 0) {
+            context.go('/home'); // Navigate to Home when home tab tapped
+          } else if (i == 1) {
             context.go('/settings');
           }
         },

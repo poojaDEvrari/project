@@ -30,6 +30,8 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
   bool _isScanning = false;
   double _scanProgress = 0.0;
   Timer? _scanTimer;
+  bool _isRecording = false;
+  String? _recordedVideoPath;
 
   @override
   void initState() {
@@ -41,7 +43,7 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
   @override
   void dispose() {
     _scanTimer?.cancel();
-    _controller?.dispose();
+    _stopRecordingIfAny().then((_) => _controller?.dispose());
     super.dispose();
   }
   
@@ -64,15 +66,19 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
         }
       });
     });
+    _startRecordingIfPossible();
   }
   
   void _onScanComplete() {
     if (!mounted) return;
     final isLast = widget.currentRoomIndex >= widget.totalRooms;
-    context.go(
-      '/scan/review?quality=excellent&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
-      // No image yet in this auto-complete path; the Done button path handles capture
-    );
+    _stopRecordingIfAny().then((xfile) {
+      if (!mounted) return;
+      context.go(
+        '/scan/review?quality=excellent&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
+        extra: xfile == null ? null : { 'videoPath': xfile.path },
+      );
+    });
   }
 
   Future<void> _restartScan() async {
@@ -82,33 +88,71 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
       _isScanning = false;
       _scanProgress = 0.0;
     });
-
-    // Recreate the camera controller cleanly
+    // Stop recording, rebuild controller, then start again
+    await _stopRecordingIfAny();
     final old = _controller;
     _controller = null;
     await old?.dispose();
     await _initCamera();
-
     // Start scanning again
     _startScanning();
   }
-
+  
   Future<void> _initCamera() async {
     try {
       final cameras = await availableCameras();
       final cam = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.isNotEmpty ? cameras.first : throw Exception('No cameras'),
+        orElse: () => cameras.isNotEmpty ? cameras.first : (throw Exception('No cameras')),
       );
-      final ctrl = CameraController(cam, ResolutionPreset.medium, enableAudio: false);
+      final ctrl = CameraController(
+        cam,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
       await ctrl.initialize();
       if (!mounted) return;
       setState(() => _controller = ctrl);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _initFailed = true);
     }
   }
 
+  Future<void> _startRecordingIfPossible() async {
+    try {
+      final ctrl = _controller;
+      if (ctrl == null) return;
+      if (!ctrl.value.isInitialized) return;
+      if (ctrl.value.isRecordingVideo) return;
+      await ctrl.startVideoRecording();
+      if (!mounted) return;
+      setState(() => _isRecording = true);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<XFile?> _stopRecordingIfAny() async {
+    try {
+      final ctrl = _controller;
+      if (ctrl == null) return null;
+      if (!ctrl.value.isInitialized) return null;
+      if (!ctrl.value.isRecordingVideo) return null;
+      final file = await ctrl.stopVideoRecording();
+      if (!mounted) return file;
+      setState(() {
+        _isRecording = false;
+        _recordedVideoPath = file.path;
+      });
+      return file;
+    } catch (_) {
+      if (!mounted) return null;
+      setState(() => _isRecording = false);
+      return null;
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     final isReady = _controller?.value.isInitialized ?? false;
@@ -314,8 +358,8 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                   width: double.infinity,
                   child: PrimaryButton(
                     label: 'End scan early',
-                    bgColor: Colors.white,
-                    fgColor: AppColors.navy,
+                    bgColor: AppColors.navy,
+                    fgColor: Colors.white,
                     onPressed: () {
                       showModalBottomSheet(
                         context: context,
@@ -389,7 +433,15 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                                   child: OutlinedButton(
                                     onPressed: () {
                                       Navigator.of(ctx).pop();
-                                      context.go('/scan/review?quality=fair&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}');
+                                      _stopRecordingIfAny().then((file) {
+                                        if (!mounted) return;
+                                        context.go(
+                                          '/scan/review?quality=fair&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
+                                          extra: file == null ? null : {
+                                            'videoPath': file.path,
+                                          },
+                                        );
+                                      });
                                     },
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.black,
@@ -413,29 +465,21 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                   width: double.infinity,
                   child: PrimaryButton(
                     label: 'Done',
+                    bgColor: AppColors.navy,
+                    fgColor: Colors.white,
                     onPressed: () async {
                       final index = widget.currentRoomIndex;
                       final total = widget.totalRooms;
                       final roomName = widget.roomName;
-                      if (_controller?.value.isInitialized ?? false) {
-                        try {
-                          final file = await _controller!.takePicture();
-                          if (!mounted) return;
-                          context.go(
-                            '/scan/review?quality=excellent&index=$index&total=$total&room=$roomName',
-                            extra: {
-                              'imagePath': file.path,
-                            },
-                          );
-                          return;
-                        } catch (_) {
-                          if (!mounted) return;
-                        }
-                      }
-                      context.go('/scan/review?quality=excellent&index=$index&total=$total&room=$roomName');
+                      final file = await _stopRecordingIfAny();
+                      if (!mounted) return;
+                      context.go(
+                        '/scan/review?quality=excellent&index=$index&total=$total&room=$roomName',
+                        extra: file == null ? null : {
+                          'videoPath': file.path,
+                        },
+                      );
                     },
-                    bgColor: AppColors.navy,
-                    fgColor: Colors.white,
                   ),
                 ),
               ],
@@ -561,6 +605,7 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
     );
     
     if (shouldCancel == true && mounted) {
+      await _stopRecordingIfAny();
       Navigator.of(context).pop();
     }
   }

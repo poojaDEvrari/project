@@ -45,9 +45,7 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            context.go('/rooms/scanned');
-          },
+          onPressed: () => context.pop(),
         ),
         title: (hasSession ? 'Select Next Room' : 'Room Selection').text.make(),
       ),
