@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final isAuth = await _auth.isAuthenticated();
     if (!mounted) return;
     if (isAuth) {
-      context.go('/home');
+      context.go('/lidar-detection');
     }
   }
 
@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (res.success) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
         // navigate to Add Room screen
-        context.go('/home');
+        context.go('/lidar-detection');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
       }

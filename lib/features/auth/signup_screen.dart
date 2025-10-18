@@ -26,7 +26,7 @@ class _SignupScreenState extends State<SignupScreen> {
       final res = await _auth.signup(req);
       if (res.success) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
-        context.go('/home');
+        context.go('/lidar-detection');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
       }

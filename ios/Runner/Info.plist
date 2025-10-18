@@ -47,5 +47,7 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access is required to scan rooms.</string>
+	<key>NSCameraUsageDescription</key>
+<string>This app needs camera access to detect LiDAR sensor</string>
 </dict>
 </plist>

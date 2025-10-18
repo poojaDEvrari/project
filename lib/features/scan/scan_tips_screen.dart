@@ -8,7 +8,8 @@ class ScanTipsScreen extends StatelessWidget {
   final int totalRooms;
   final String roomName;
   final int index;
-  const ScanTipsScreen({super.key, required this.totalRooms, required this.roomName, required this.index});
+  final String? projectId;
+  const ScanTipsScreen({super.key, required this.totalRooms, required this.roomName, required this.index, this.projectId});
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +77,13 @@ class ScanTipsScreen extends StatelessWidget {
               icon: Icons.qr_code_scanner_outlined,
               bgColor: AppColors.navy,
               fgColor: Colors.white,
-              onPressed: () => context.push('/scan/running?room=${Uri.encodeComponent(roomName)}&index=$index&total=$totalRooms'),
+              onPressed: () {
+                final project = projectId;
+                final projectQP = (project != null && project.isNotEmpty)
+                    ? '&project=${Uri.encodeComponent(project)}'
+                    : '';
+                context.push('/scan/running?room=${Uri.encodeComponent(roomName)}&index=$index&total=$totalRooms$projectQP');
+              },
             ),
           ),
         ),

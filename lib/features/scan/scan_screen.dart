@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:velocity_x/velocity_x.dart';
-import '../../widgets/primary_button.dart';
 import '../../widgets/permission_banner.dart';
 import '../../core/theme/app_colors.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,7 +9,14 @@ class ScanScreen extends StatefulWidget {
   final int totalRooms;
   final String? initialRoomName;
   final int? initialIndex;
-  const ScanScreen({super.key, required this.totalRooms, this.initialRoomName, this.initialIndex});
+  final String? projectId;
+  const ScanScreen({
+    super.key,
+    required this.totalRooms,
+    this.initialRoomName,
+    this.initialIndex,
+    this.projectId,
+  });
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -59,7 +65,11 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         setState(() => showPermissionDialog = false);
         final room = widget.initialRoomName ?? 'Living Room';
         final idx = widget.initialIndex ?? 1;
-        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx');
+        final project = widget.projectId;
+        final projectQP = (project != null && project.isNotEmpty)
+            ? '&project=${Uri.encodeComponent(project)}'
+            : '';
+        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx$projectQP');
       }
     }
   }
@@ -73,7 +83,11 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       if (mounted) {
         final room = widget.initialRoomName ?? 'Living Room';
         final idx = widget.initialIndex ?? 1;
-        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx');
+        final project = widget.projectId;
+        final projectQP = (project != null && project.isNotEmpty)
+            ? '&project=${Uri.encodeComponent(project)}'
+            : '';
+        context.push('/scan/tips?total=${widget.totalRooms}&room=${Uri.encodeComponent(room)}&index=$idx$projectQP');
       }
     }
   }
@@ -93,8 +107,8 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
         ),
         title: const Text(
           'Scan',
@@ -162,129 +176,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
-          
-          // Permission Dialog Overlay (original top banner) - disabled; we will render it last for topmost z-order
-          if (false)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                color: Colors.black.withOpacity(0.3),
-                padding: const EdgeInsets.all(24.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFe8f0f7),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.blue.shade300,
-                                width: 2,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.info_outline,
-                              color: Colors.blue.shade600,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              'Camera Access',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 52),
-                        child: Text(
-                          'Camera access is required to scan room. Please enable it in Settings.',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Color(0xFF007AFF),
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
-                                onPressed: _openSettings,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF007AFF),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Open Settings',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    showPermissionDialog = false;
-                                  });
-                                },
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.black,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Not Now',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          
+
           // Re-add the top banner after overlays so it stays visible (Option B)
           if (showPermissionDialog)
             Positioned(

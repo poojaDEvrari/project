@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'DIMENX',
+      title: 'Estiper',
       theme: appTheme(),
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,

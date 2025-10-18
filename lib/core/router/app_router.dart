@@ -15,6 +15,8 @@ import '../../features/settings/settings_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/auth/profile_screen.dart';
+import '../../features/lidar-detection/lidar_detection_screen.dart';
+import '../../features/projects/projects_screen.dart';
 
 
 final GoRouter appRouter = GoRouter(
@@ -26,9 +28,26 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const SplashScreen(),
     ),
     GoRoute(
+      path: '/projects',
+      name: 'projects',
+      builder: (context, state) => const ProjectsScreen(),
+    ),
+    GoRoute(
+  path: '/lidar-detection',
+  name: 'lidar_detection',
+  builder: (context, state) => const LidarDetectionScreen(),
+),
+    GoRoute(
       path: '/home',
       name: 'home',
-      builder: (context, state) => const HomeScreen(),
+      builder: (context, state) {
+        final projectId = state.uri.queryParameters['project'];
+        final projectName = state.uri.queryParameters['name'];
+        return HomeScreen(
+          projectId: projectId,
+          projectName: projectName != null ? Uri.decodeComponent(projectName) : null,
+        );
+      },
     ),
     GoRoute(
       path: '/scan',
@@ -37,7 +56,13 @@ final GoRouter appRouter = GoRouter(
         final total = int.tryParse(state.uri.queryParameters['total'] ?? '5') ?? 5;
         final room = state.uri.queryParameters['room'];
         final index = int.tryParse(state.uri.queryParameters['index'] ?? '1') ?? 1;
-        return ScanScreen(totalRooms: total, initialRoomName: room, initialIndex: index);
+        final project = state.uri.queryParameters['project'];
+        return ScanScreen(
+          totalRooms: total,
+          initialRoomName: room,
+          initialIndex: index,
+          projectId: project,
+        );
       },
     ),
     GoRoute(
@@ -47,7 +72,8 @@ final GoRouter appRouter = GoRouter(
         final total = int.tryParse(state.uri.queryParameters['total'] ?? '5') ?? 5;
         final room = state.uri.queryParameters['room'] ?? 'Living Room';
         final index = int.tryParse(state.uri.queryParameters['index'] ?? '1') ?? 1;
-        return ScanTipsScreen(totalRooms: total, roomName: room, index: index);
+        final project = state.uri.queryParameters['project'];
+        return ScanTipsScreen(totalRooms: total, roomName: room, index: index, projectId: project);
       },
     ),
     GoRoute(
@@ -57,10 +83,12 @@ final GoRouter appRouter = GoRouter(
         final room = state.uri.queryParameters['room'] ?? 'Living Room';
         final index = int.tryParse(state.uri.queryParameters['index'] ?? '1') ?? 1;
         final total = int.tryParse(state.uri.queryParameters['total'] ?? '5') ?? 5;
+        final project = state.uri.queryParameters['project'];
         return ScanRunningScreen(
           roomName: room,
           currentRoomIndex: index,
           totalRooms: total,
+          projectId: project,
         );
       },
     ),

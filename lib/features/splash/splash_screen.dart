@@ -26,7 +26,7 @@ class _SplashScreenState extends State<SplashScreen> {
       final authService = AuthService();
       final isAuth = await authService.isAuthenticated();
       if (isAuth) {
-        context.go('/home'); // Go to Home if authenticated
+        context.go('/projects'); // Go to Home if authenticated
       } else {
         context.go('/login'); // Go to Login if not
       }

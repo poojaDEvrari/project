@@ -3,6 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:velocity_x/velocity_x.dart';
 import 'package:camera/camera.dart';
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+import '../../core/services/s3_presigner.dart';
+import '../../core/config/aws_config.dart';
+import '../auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/primary_button.dart';
 
@@ -11,6 +18,8 @@ class ScanRunningScreen extends StatefulWidget {
   final String roomType;
   final int currentRoomIndex;
   final int totalRooms;
+  final String? projectId;
+  final String? subProjectId;
 
   const ScanRunningScreen({
     super.key,
@@ -18,6 +27,8 @@ class ScanRunningScreen extends StatefulWidget {
     this.roomType = 'bedroom',
     this.currentRoomIndex = 1,
     required this.totalRooms,
+    this.projectId,
+    this.subProjectId,
   });
 
   @override
@@ -31,7 +42,12 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
   double _scanProgress = 0.0;
   Timer? _scanTimer;
   bool _isRecording = false;
-  String? _recordedVideoPath;
+  XFile? _recordedVideo;
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
+  static const int _maxRecordingSeconds = 30;
+  bool _isProcessing = false;
+  String? _uploadedS3Url;
 
   @override
   void initState() {
@@ -39,10 +55,37 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
     _initCamera();
     _startScanning();
   }
+
+  // Ensures we have at least a short recorded clip. If none is present, it
+  // starts recording for [minDuration], stops, and assigns to _recordedVideo.
+  Future<void> _ensureVideoFile({Duration minDuration = const Duration(seconds: 2)}) async {
+    if (_recordedVideo != null) {
+      debugPrint('ℹ️  [RECORD] _ensureVideoFile: already have file=${_recordedVideo!.path}');
+      return;
+    }
+    debugPrint('🧪 [RECORD] _ensureVideoFile: capturing short clip...');
+    final started = await ensureRecordingStarted(timeout: const Duration(seconds: 2));
+    if (!started) {
+      debugPrint('⛔ [RECORD] Could not start recording for fallback');
+      return;
+    }
+    await Future.delayed(minDuration);
+    final file = await _stopRecordingIfAny();
+    if (file != null) {
+      _recordedVideo = file;
+      try {
+        final size = await File(file.path).length();
+        debugPrint('✅ [RECORD] Fallback captured file=${file.path} size=${size}B');
+      } catch (_) {}
+    } else {
+      debugPrint('❌ [RECORD] Fallback stop returned null');
+    }
+  }
   
   @override
   void dispose() {
     _scanTimer?.cancel();
+    _recordingTimer?.cancel();
     _stopRecordingIfAny().then((_) => _controller?.dispose());
     super.dispose();
   }
@@ -51,85 +94,494 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
     setState(() {
       _isScanning = true;
       _scanProgress = 0.0;
+      _recordingSeconds = 0;
     });
     
-    // Simulate scanning progress
-    _scanTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted) return;
+    // Start recording first, then begin progress simulation
+    _startRecordingIfPossible().then((_) {
+      // Simulate scanning progress
+      _scanTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+        if (!mounted) return;
+        
+        setState(() {
+          _scanProgress += 0.01;
+          if (_scanProgress >= 1.0) {
+            _scanProgress = 1.0;
+            timer.cancel();
+          }
+        });
+      });
       
-      setState(() {
-        _scanProgress += 0.01;
-        if (_scanProgress >= 1.0) {
-          _scanProgress = 1.0;
-          _onScanComplete();
-          timer.cancel();
-        }
+      // Start recording duration timer
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        
+        setState(() {
+          _recordingSeconds++;
+          
+          // Auto-stop at 30 seconds
+          if (_recordingSeconds >= _maxRecordingSeconds) {
+            timer.cancel();
+            _scanTimer?.cancel();
+            _handleRecordingComplete();
+          }
+        });
       });
     });
-    _startRecordingIfPossible();
   }
   
-  void _onScanComplete() {
-    if (!mounted) return;
-    final isLast = widget.currentRoomIndex >= widget.totalRooms;
-    _stopRecordingIfAny().then((xfile) {
-      if (!mounted) return;
-      context.go(
-        '/scan/review?quality=excellent&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
-        extra: xfile == null ? null : { 'videoPath': xfile.path },
+  Future<void> _handleRecordingComplete() async {
+    if (_isProcessing) return;
+    
+    debugPrint('🎥 [RECORD] Handle complete: isRecording=$_isRecording, ctrl.isRecording=${_controller?.value.isRecordingVideo}');
+    
+    setState(() => _isProcessing = true);
+    
+    final video = await _stopRecordingIfAny();
+    debugPrint('🎥 [RECORD] stopRecording -> ${video?.path ?? 'null'}');
+    
+    if (video != null && mounted) {
+      _recordedVideo = video;
+      try {
+        final size = await File(video.path).length();
+        debugPrint('💾 [FILE] Saved video path=${video.path}, size=${size}B');
+      } catch (_) {}
+    } else {
+      debugPrint('❗ [RECORD] Video is null after stopping recording');
+    }
+    
+    if (mounted) {
+      setState(() => _isProcessing = false);
+    }
+  }
+  
+  Future<void> _uploadVideoAndNavigate(String quality) async {
+    if (_recordedVideo == null) {
+      // If no video yet, stop recording first
+      final video = await _stopRecordingIfAny();
+      if (video != null) {
+        _recordedVideo = video;
+      }
+    }
+    
+    if (_recordedVideo == null) {
+      debugPrint('⚠️  [FLOW] No video yet. Trying fallback to capture short clip...');
+      await _ensureVideoFile();
+      if (_recordedVideo == null) {
+        _showErrorDialog('No video recorded. Please ensure camera permissions are granted.');
+        return;
+      }
+    }
+    
+    setState(() => _isProcessing = true);
+    
+    try {
+      // Step 1: Upload video to S3 (kept as-is; ensure your presign endpoint works)
+      debugPrint('☁️ [UPLOAD] Begin S3 upload...');
+      final s3Url = await _uploadVideoToS3(_recordedVideo!);
+      
+      if (s3Url == null) {
+        debugPrint('❌ [UPLOAD] Failed to upload to S3');
+        _showErrorDialog('Failed to upload video to S3. Please try again.');
+        return;
+      }
+      
+      _uploadedS3Url = s3Url;
+      debugPrint('✅ [UPLOAD] S3 URL: $s3Url');
+      
+      // Step 2: Create sub-project for this room
+      Map<String, dynamic>? subProject;
+      if (widget.projectId != null && widget.projectId!.isNotEmpty) {
+        debugPrint('🗂️ [SUBPROJECT] Creating for projectId=${widget.projectId}, roomName=${widget.roomName}');
+        subProject = await _createSubProject(
+          projectId: widget.projectId!,
+          roomName: widget.roomName,
+          s3Url: s3Url,
+        );
+        if (subProject != null) {
+          final sid = (subProject['sub_project'] is Map) ? (subProject['sub_project']['id']?.toString()) : null;
+          debugPrint('✅ [SUBPROJECT] Created sub_project_id=${sid ?? 'unknown'}');
+        } else {
+          debugPrint('⚠️ [SUBPROJECT] Creation returned null');
+        }
+      }
+
+      // Step 3: Process LiDAR pipeline using the new API
+      debugPrint('🛰️ [LIDAR] Processing start for s3Url');
+      final subProjectId = (subProject != null && subProject['sub_project'] is Map)
+          ? (subProject['sub_project']['id']?.toString())
+          : null;
+      final response = await _processLiDARFromS3(
+        s3Url,
+        projectId: widget.projectId,
+        subProjectId: subProjectId,
+        processingMode: 'full_pipeline',
+        maxFrames: 30,
       );
-    });
+      
+      if (!mounted) return;
+      
+      if (response != null) {
+        // Success - navigate with API response
+        debugPrint('✅ [LIDAR] Processing success, navigating to review');
+        context.go(
+          '/scan/review?quality=$quality&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
+          extra: {
+            'videoPath': _recordedVideo!.path,
+            's3Url': s3Url,
+            'apiResponse': response,
+            if (subProject != null) 'subProject': subProject,
+          },
+        );
+      } else {
+        debugPrint('❌ [LIDAR] Processing failed');
+        _showErrorDialog('Failed to process scan. Please try again.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('💥 [FLOW] Error: $e');
+      _showErrorDialog('Error: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        debugPrint('🧹 [FLOW] Done (isProcessing=false)');
+      }
+    }
+  }
+  
+  // 1) Get token (adapt to your auth storage)
+  Future<String?> _getAccessToken() async {
+    // Use the existing AuthService to read the JWT stored under key 'jwt'
+    final auth = AuthService();
+    return await auth.getToken();
+  }
+
+  // 2) Request a presigned URL from your backend
+  Future<Map<String, String>?> _getPresignedUrl({
+    required String fileName,
+    required String contentType,
+    String? projectId,
+    String? subProjectId,
+  }) async {
+    final token = await _getAccessToken();
+    // Try a sequence of possible endpoints since server 404 shows no 'storage/' prefix
+    final candidateEndpoints = <String>[
+      'http://98.86.182.22/projects/presign-upload/',
+      'http://98.86.182.22/detections/presign-upload/',
+      'http://98.86.182.22/storage/presign-upload/', // legacy guess
+    ];
+
+    // Construct S3 key similar to the web code: project-videos/<timestamp>-<original name>
+    final s3Key = 'project-videos/${DateTime.now().millisecondsSinceEpoch}-$fileName';
+
+    final body = {
+      'file_name': fileName,
+      'content_type': contentType,
+      's3_key': s3Key,
+      if (projectId != null) 'project_id': projectId,
+      if (subProjectId != null) 'sub_project_id': subProjectId,
+    };
+
+    for (final url in candidateEndpoints) {
+      final uri = Uri.parse(url);
+      debugPrint('📝 [PRESIGN] Request -> url=$uri body=${json.encode(body)}');
+      final res = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+      if (res.statusCode == 200) {
+        final map = json.decode(res.body) as Map<String, dynamic>;
+        debugPrint('✅ [PRESIGN] 200 OK from $url, keys=${map.keys.toList()}');
+        return {
+          'uploadUrl': map['uploadUrl'] as String,
+          's3Url': map['s3Url'] as String,
+        };
+      }
+      debugPrint('❌ [PRESIGN] ${res.statusCode} at $url');
+      if (res.statusCode != 404) {
+        // Non-404 errors shouldn't try other endpoints
+        debugPrint('❌ [PRESIGN] Error body: ${res.body}');
+        return null;
+      }
+    }
+    debugPrint('❌ [PRESIGN] All candidate endpoints returned 404');
+    // Local presign fallback (mirrors website UploadModel pattern)
+    if (awsBucket.isNotEmpty && awsRegion.isNotEmpty && awsAccessKeyId.isNotEmpty && awsSecretAccessKey.isNotEmpty) {
+      try {
+        final uploadUrl = S3Presigner.presignPutUrl(
+          bucket: awsBucket,
+          region: awsRegion,
+          key: s3Key,
+          contentType: contentType,
+        );
+        final s3Url = 'https://$awsBucket.s3.$awsRegion.amazonaws.com/$s3Key';
+        debugPrint('🔐 [PRESIGN-LOCAL] Generated PUT URL');
+        return {
+          'uploadUrl': uploadUrl,
+          's3Url': s3Url,
+        };
+      } catch (e) {
+        debugPrint('💥 [PRESIGN-LOCAL] Error: $e');
+      }
+    } else {
+      debugPrint('⚠️  [PRESIGN-LOCAL] AWS config is empty. Fill lib/core/config/aws_config.dart');
+    }
+    return null;
+  }
+
+  // 3) PUT the file to presigned URL (no auth header, just content-type)
+  Future<bool> _putToPresignedUrl({
+    required String uploadUrl,
+    required XFile video,
+    required String contentType,
+  }) async {
+    final bytes = await File(video.path).readAsBytes();
+    final uri = Uri.parse(uploadUrl);
+    final signedHeaders = uri.queryParameters['X-Amz-SignedHeaders'] ?? uri.queryParameters['x-amz-signedheaders'] ?? '';
+    final req = http.Request('PUT', uri)
+      ..bodyBytes = bytes;
+    if (signedHeaders.toLowerCase().split(';').contains('content-type')) {
+      req.headers['Content-Type'] = contentType;
+    }
+    debugPrint('⬆️  [PUT] Upload to presignedUrl=${uploadUrl} contentType=${contentType} bytes=${bytes.length}');
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+    final ok = res.statusCode == 200;
+    if (!ok) {
+      debugPrint('❌ [PUT] Failed ${res.statusCode} ${res.body}');
+    } else {
+      debugPrint('✅ [PUT] Success 200');
+    }
+    return ok;
+  }
+
+  // 4) Your upload entry: mirrors web: get presign -> PUT -> return s3Url
+  Future<String?> _uploadVideoToS3(XFile video) async {
+    try {
+      final fileName = path.basename(video.path);
+      debugPrint('☁️ [UPLOAD] Preparing presign for file=$fileName');
+      final ext = path.extension(fileName).toLowerCase();
+      String contentType;
+      switch (ext) {
+        case '.mp4':
+          contentType = 'video/mp4';
+          break;
+        case '.mov':
+          contentType = 'video/quicktime';
+          break;
+        case '.m4v':
+          contentType = 'video/x-m4v';
+          break;
+        default:
+          contentType = 'application/octet-stream';
+      }
+      final presign = await _getPresignedUrl(
+        fileName: fileName,
+        contentType: contentType,
+        projectId: widget.projectId,
+        subProjectId: widget.subProjectId,
+      );
+      if (presign == null) return null;
+
+      final ok = await _putToPresignedUrl(
+        uploadUrl: presign['uploadUrl']!,
+        video: video,
+        contentType: contentType,
+      );
+      if (!ok) return null;
+
+      debugPrint('☁️ [UPLOAD] Completed, s3Url=${presign['s3Url']}');
+      return presign['s3Url'];
+    } catch (e) {
+      debugPrint('💥 [UPLOAD] S3 error: $e');
+      return null;
+    }
+  }
+  
+  /// Create sub-project with project_id, room_name, s3_bucket_url
+  Future<Map<String, dynamic>?> _createSubProject({
+    required String projectId,
+    required String roomName,
+    required String s3Url,
+  }) async {
+    try {
+      final token = await _getAccessToken();
+      final uri = Uri.parse('http://98.86.182.22/detections/sub-projects/create/');
+      final requestBody = {
+        'project_id': projectId,
+        'room_name': roomName,
+        's3_bucket_url': s3Url,
+      };
+      debugPrint('🗂️ [SUBPROJECT] POST ${uri.toString()} body=${json.encode(requestBody)}');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: json.encode(requestBody),
+      );
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final Map<String, dynamic> jsonResponse = json.decode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ [SUBPROJECT] ${response.statusCode} ${json.encode(jsonResponse)}');
+        return jsonResponse;
+      }
+      debugPrint('❌ [SUBPROJECT] Error ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint('💥 [SUBPROJECT] Exception: $e');
+      return null;
+    }
+  }
+
+  /// Step: Process LiDAR using the new API
+  Future<Map<String, dynamic>?> _processLiDARFromS3(
+    String s3Url, {
+    String? projectId,
+    String? subProjectId,
+    String processingMode = 'full_pipeline',
+    int maxFrames = 30,
+  }) async {
+    try {
+      final token = await _getAccessToken();
+      final uri = Uri.parse('http://98.86.182.22/lidar/process-video/');
+
+      final requestBody = <String, dynamic>{
+        's3_bucket_url': s3Url,
+        'max_frames': maxFrames,
+        'processing_mode': processingMode,
+        if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
+        if (subProjectId != null && subProjectId.isNotEmpty) 'sub_project_id': subProjectId,
+      };
+
+      debugPrint('🛰️ [LIDAR] POST ${uri.toString()} body=${json.encode(requestBody)}');
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: json.encode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonResponse = json.decode(response.body) as Map<String, dynamic>;
+        debugPrint('✅ [LIDAR] 200 OK: ${json.encode(jsonResponse)}');
+        return jsonResponse;
+      }
+      debugPrint('❌ [LIDAR] Error ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint('💥 [LIDAR] Exception: $e');
+      return null;
+    }
+  }
+  
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _restartScan() async {
     // Stop any ongoing scan progress
     _scanTimer?.cancel();
+    _recordingTimer?.cancel();
     setState(() {
       _isScanning = false;
       _scanProgress = 0.0;
+      _recordingSeconds = 0;
+      _recordedVideo = null;
+      _uploadedS3Url = null;
     });
+    
     // Stop recording, rebuild controller, then start again
     await _stopRecordingIfAny();
     final old = _controller;
     _controller = null;
     await old?.dispose();
     await _initCamera();
+    
     // Start scanning again
     _startScanning();
   }
   
   Future<void> _initCamera() async {
     try {
+      debugPrint('📷 [CAMERA] Querying available cameras...');
       final cameras = await availableCameras();
       final cam = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.isNotEmpty ? cameras.first : (throw Exception('No cameras')),
       );
+      debugPrint('📷 [CAMERA] Using camera: ${cam.name} (${cam.lensDirection})');
       final ctrl = CameraController(
         cam,
         ResolutionPreset.medium,
         enableAudio: false,
       );
+      debugPrint('📷 [CAMERA] Initializing controller...');
       await ctrl.initialize();
       if (!mounted) return;
       setState(() => _controller = ctrl);
+      debugPrint('✅ [CAMERA] Initialized (isInitialized=${ctrl.value.isInitialized})');
     } catch (e) {
       if (!mounted) return;
       setState(() => _initFailed = true);
+      debugPrint('💥 [CAMERA] Init error: $e');
     }
   }
 
   Future<void> _startRecordingIfPossible() async {
     try {
       final ctrl = _controller;
-      if (ctrl == null) return;
-      if (!ctrl.value.isInitialized) return;
-      if (ctrl.value.isRecordingVideo) return;
+      if (ctrl == null) {
+        debugPrint('⏳ [RECORD] Controller is null, waiting...');
+        await Future.delayed(const Duration(milliseconds: 500));
+        return _startRecordingIfPossible();
+      }
+      if (!ctrl.value.isInitialized) {
+        debugPrint('⏳ [RECORD] Controller not initialized, waiting...');
+        await Future.delayed(const Duration(milliseconds: 500));
+        return _startRecordingIfPossible();
+      }
+      if (ctrl.value.isRecordingVideo) {
+        debugPrint('ℹ️  [RECORD] Already recording');
+        return;
+      }
+      debugPrint('▶️  [RECORD] startVideoRecording()');
       await ctrl.startVideoRecording();
+      debugPrint('✅ [RECORD] Recording started successfully');
       if (!mounted) return;
       setState(() => _isRecording = true);
-    } catch (_) {
-      // ignore
+    } catch (e) {
+      debugPrint('💥 [RECORD] start error: $e');
+      await Future.delayed(const Duration(milliseconds: 1000));
+      if (mounted && _controller?.value.isInitialized == true) {
+        try {
+          await _controller!.startVideoRecording();
+          if (mounted) {
+            setState(() => _isRecording = true);
+          }
+        } catch (e2) {
+          debugPrint('💥 [RECORD] retry failed: $e2');
+        }
+      }
     }
   }
 
@@ -143,20 +595,41 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
       if (!mounted) return file;
       setState(() {
         _isRecording = false;
-        _recordedVideoPath = file.path;
       });
       return file;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Recording stop error: $e');
       if (!mounted) return null;
       setState(() => _isRecording = false);
       return null;
     }
   }
+
+  Future<bool> ensureRecordingStarted({Duration timeout = const Duration(seconds: 2)}) async {
+    debugPrint('⏱️  [RECORD] ensureRecordingStarted(timeout=${timeout.inMilliseconds}ms)');
+    final end = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(end)) {
+      if (_isRecording || (_controller?.value.isRecordingVideo ?? false)) return true;
+      await _startRecordingIfPossible();
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+    final result = _isRecording || (_controller?.value.isRecordingVideo ?? false);
+    debugPrint(result
+        ? '✅ [RECORD] ensureRecordingStarted -> recording'
+        : '⛔ [RECORD] ensureRecordingStarted -> timed out');
+    return result;
+  }
+  
+  String _formatDuration(int seconds) {
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
   
   @override
   Widget build(BuildContext context) {
     final isReady = _controller?.value.isInitialized ?? false;
-    final previewSize = isReady ? _controller!.value.previewSize : null;
+    debugPrint('🧱 [BUILD] ready=$isReady, isRecording=$_isRecording, progress=${(_scanProgress * 100).toStringAsFixed(0)}%');
     final mediaQuery = MediaQuery.of(context);
     final statusBarHeight = mediaQuery.padding.top;
     final appBarHeight = kToolbarHeight;
@@ -209,6 +682,68 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                         : const CircularProgressIndicator(color: Colors.white),
                   ),
           ),
+          
+          // Processing overlay
+          if (_isProcessing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black87,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: Colors.white),
+                      const SizedBox(height: 16),
+                      Text(
+                        _uploadedS3Url == null 
+                          ? 'Uploading video...' 
+                          : 'Processing scan...',
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          
+          // Recording duration indicator
+          if (_isRecording)
+            Positioned(
+              top: totalTopPadding + 80,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'REC ${_formatDuration(_recordingSeconds)} / ${_formatDuration(_maxRecordingSeconds)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           
           // Scanning progress indicator
           if (_isScanning)
@@ -265,12 +800,12 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
             ),
           ),
           
-          // Semi-transparent overlay for the top part to ensure header is readable
+          // Semi-transparent overlay for the top part
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            height: totalTopPadding + 10, // Add a little extra for the shadow
+            height: totalTopPadding + 10,
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -286,9 +821,9 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
             ),
           ),
 
-          // Tip banner over image
+          // Tip banner
           Positioned(
-            top: totalTopPadding + 16, // Position below app bar with some padding
+            top: totalTopPadding + 16,
             left: 16,
             right: 16,
             child: Row(
@@ -319,29 +854,6 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                 .shadowSm
                 .make(),
           ),
-          
-          // Bottom controls
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.black.withOpacity(0.8),
-                  ],
-                ),
-              ),
-              child: _isScanning
-                  ? _buildScanningControls()
-                  : _buildInitialControls(),
-            ),
-          ),
         ],
       ),
       bottomNavigationBar: Container(
@@ -360,7 +872,10 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                     label: 'End scan early',
                     bgColor: AppColors.navy,
                     fgColor: Colors.white,
-                    onPressed: () {
+                    onPressed: _isProcessing 
+                      ? () {} 
+                      : () {
+                      debugPrint('🛑 [UI] End scan early pressed');
                       showModalBottomSheet(
                         context: context,
                         isScrollControlled: false,
@@ -416,6 +931,7 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                                   child: OutlinedButton(
                                     onPressed: () async {
                                       Navigator.of(ctx).pop();
+                                      debugPrint('🔁 [UI] Restart Scan');
                                       await _restartScan();
                                     },
                                     style: OutlinedButton.styleFrom(
@@ -433,15 +949,9 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                                   child: OutlinedButton(
                                     onPressed: () {
                                       Navigator.of(ctx).pop();
-                                      _stopRecordingIfAny().then((file) {
-                                        if (!mounted) return;
-                                        context.go(
-                                          '/scan/review?quality=fair&index=${widget.currentRoomIndex}&total=${widget.totalRooms}&room=${Uri.encodeComponent(widget.roomName)}',
-                                          extra: file == null ? null : {
-                                            'videoPath': file.path,
-                                          },
-                                        );
-                                      });
+                                      debugPrint('🛑 [UI] End Anyway -> ensureRecordingStarted + complete + upload');
+                                      ensureRecordingStarted().then((_) => _handleRecordingComplete())
+                                        .then((_) { if (mounted) _uploadVideoAndNavigate('fair'); });
                                     },
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.black,
@@ -464,122 +974,23 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
                   height: 56,
                   width: double.infinity,
                   child: PrimaryButton(
-                    label: 'Done',
+                    label: _isProcessing ? 'Processing...' : 'Done',
                     bgColor: AppColors.navy,
                     fgColor: Colors.white,
-                    onPressed: () async {
-                      final index = widget.currentRoomIndex;
-                      final total = widget.totalRooms;
-                      final roomName = widget.roomName;
-                      final file = await _stopRecordingIfAny();
-                      if (!mounted) return;
-                      context.go(
-                        '/scan/review?quality=excellent&index=$index&total=$total&room=$roomName',
-                        extra: file == null ? null : {
-                          'videoPath': file.path,
+                    onPressed: _isProcessing 
+                      ? () {}
+                      : () async {
+                          debugPrint('✅ [UI] Done pressed');
+                          setState(() => _isProcessing = true);
+                          await ensureRecordingStarted();
+                          await _handleRecordingComplete();
+                          if (mounted) await _uploadVideoAndNavigate('excellent');
                         },
-                      );
-                    },
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInitialControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildControlButton(
-          icon: Icons.flash_on,
-          onPressed: () {},
-        ),
-        _buildScanButton(
-          onPressed: _startScanning,
-          isScanning: false,
-        ),
-        _buildControlButton(
-          icon: Icons.flip_camera_ios,
-          onPressed: () {},
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildScanningControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildControlButton(
-          icon: Icons.pause,
-          onPressed: () {
-            // Pause scanning
-            _scanTimer?.cancel();
-            setState(() => _isScanning = false);
-          },
-        ),
-        const SizedBox(width: 24),
-        _buildControlButton(
-          icon: Icons.check,
-          backgroundColor: Colors.green,
-          onPressed: () {
-            // Complete scanning early
-            _scanTimer?.cancel();
-            _onScanComplete();
-          },
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildControlButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    Color? backgroundColor,
-  }) {
-    return IconButton(
-      icon: Icon(icon, color: Colors.white),
-      onPressed: onPressed,
-      style: IconButton.styleFrom(
-        backgroundColor: backgroundColor ?? Colors.black54,
-        padding: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildScanButton({VoidCallback? onPressed, bool isScanning = false}) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        width: 70,
-        height: 70,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isScanning ? Colors.red : Colors.transparent,
-          border: Border.all(
-            color: isScanning ? Colors.red : Colors.white,
-            width: 3,
-          ),
-        ),
-        child: Center(
-          child: isScanning
-              ? const Icon(
-                  Icons.stop,
-                  color: Colors.white,
-                  size: 32,
-                )
-              : const Icon(
-                  Icons.camera_alt,
-                  color: Colors.white,
-                  size: 32,
-                ),
         ),
       ),
     );
@@ -606,7 +1017,9 @@ class _ScanRunningScreenState extends State<ScanRunningScreen> {
     
     if (shouldCancel == true && mounted) {
       await _stopRecordingIfAny();
-      Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     }
   }
 }
